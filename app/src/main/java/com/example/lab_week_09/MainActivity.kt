@@ -7,8 +7,14 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardOptions
@@ -42,6 +48,11 @@ import com.example.lab_week_09.ui.theme.LAB_WEEK_09Theme
 import com.example.lab_week_09.ui.theme.OnBackgroundItemText
 import com.example.lab_week_09.ui.theme.OnBackgroundTitleText
 import com.example.lab_week_09.ui.theme.PrimaryTextButton
+import com.squareup.moshi.Moshi
+import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
+//import java.sql.Types
+import com.squareup.moshi.Types
+
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -74,12 +85,12 @@ fun App(navController: NavHostController) {
         composable("home") {
             Home { listAsText ->
                 navController.navigate(
-                    "resultContent/?listData=$it"
+                    "resultContent/?listData=${Uri.encode(listAsText)}"
                 )
             }
         }
         composable(
-            route = "resultContent/?listData={listData}",
+            "resultContent/?listData={listData}",
             arguments = listOf(navArgument("listData") { type = NavType.StringType })
         ) { backStackEntry ->
             ResultContent(backStackEntry.arguments?.getString("listData").orEmpty())
@@ -101,6 +112,11 @@ fun Home(
     }
     var inputField by remember { mutableStateOf(Student("")) }
 
+    // Moshi setup (remember so it’s not rebuilt each recomposition)
+    val moshi = remember { Moshi.Builder().add(KotlinJsonAdapterFactory()).build() }
+    val listType = remember { Types.newParameterizedType(List::class.java, Student::class.java) }
+    val listAdapter = remember { moshi.adapter<List<Student>>(listType) }
+
     HomeContent(
         listData = listData,
         inputField = inputField,
@@ -112,8 +128,8 @@ fun Home(
             }
         },
         navigateFromHomeToResult = {
-            val joined = listData.joinToString(", ") { it.name }
-            navigateFromHomeToResult(joined)
+            val json = listAdapter.toJson(listData.toList())
+            navigateFromHomeToResult(Uri.encode(json))   // pass encoded JSON
         }
     )
 }
@@ -170,15 +186,47 @@ fun HomeContent(
 // --- Result screen ---
 @Composable
 fun ResultContent(listData: String) {
-    Column(
+    val decodedJson = remember(listData) { Uri.decode(listData) }
+
+    // Moshi
+    val moshi = remember { Moshi.Builder().add(KotlinJsonAdapterFactory()).build() }
+    val listType = remember { Types.newParameterizedType(List::class.java, Student::class.java) }
+    val adapter = remember { moshi.adapter<List<Student>>(listType) }
+
+    // Parse JSON -> always return a non-null List
+    val students: List<Student> = remember(decodedJson) {
+        // fromJson() returns List<Student>?
+        // make it non-null BEFORE returning from remember
+        adapter.fromJson(decodedJson).orEmpty()
+    }
+
+    LazyColumn(
         modifier = Modifier
-            .padding(vertical = 4.dp)
-            .fillMaxSize(),
-        horizontalAlignment = Alignment.CenterHorizontally
+            .fillMaxSize()
+            .padding(WindowInsets.statusBars.asPaddingValues())
+            .padding(16.dp)
     ) {
-        OnBackgroundItemText(text = listData)
+        item { OnBackgroundTitleText(text = "Students") }
+
+        if (students.isEmpty()) {
+            item {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    OnBackgroundItemText(text = "No data")
+                }
+            }
+        } else {
+            // ✅ Use the items(list) overload; list is NON-NULL now
+            items(students) { s ->
+                OnBackgroundItemText(text = s.name)  // 'name' resolves correctly
+                Spacer(Modifier.height(8.dp))
+            }
+        }
     }
 }
+
 
 // --- Previews ---
 @Preview(showBackground = true)
