@@ -74,7 +74,7 @@ fun App(navController: NavHostController) {
         composable("home") {
             Home { listAsText ->
                 navController.navigate(
-                    "resultContent/?listData=${Uri.encode(listAsText)}"
+                    "resultContent/?listData=$it"
                 )
             }
         }
